@@ -1,6 +1,8 @@
 from django.db import models
+from django.db.models import JSONField
 
 class Member(models.Model):
+    sejm_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
     first_name = models.CharField(max_length=50, null=True, blank=True)
     last_name = models.CharField(max_length=50, null=True, blank=True)
     club = models.CharField(max_length=50, null=True, blank=True)
@@ -11,11 +13,11 @@ class Member(models.Model):
     email = models.EmailField(max_length=100, null=True, blank=True)
 
     class Meta:
-        db_table = 'parliament"."members'
+        db_table = 'parliament"."members' 
         app_label = 'sejm_app'
 
     def __str__(self):
-        return f"{self.first_name} {self.last_name}"
+        return f"{self.first_name} {self.last_name} ({self.club})"
 
 class Voting(models.Model):
     abstain = models.IntegerField(null=True, blank=True)
@@ -37,8 +39,39 @@ class Voting(models.Model):
     yes = models.IntegerField(null=True, blank=True)
 
     class Meta:
-        db_table = 'parliament"."votings'
+        unique_together = ('voting_number', 'sitting_day', 'term')
+        db_table = 'parliament"."votings' 
         app_label = 'sejm_app'
 
     def __str__(self):
-        return f"Voting {self.voting_number}: {self.title}"
+        return f"Voting {self.voting_number}/{self.sitting_day} - {self.title}"
+    
+
+class Vote(models.Model):
+    # Relacja do konkretnego głosowania
+    voting = models.ForeignKey(Voting, on_delete=models.CASCADE, related_name='individual_votes')
+    # Relacja do posła
+    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name='member_votes', null=True, blank=True)
+    # Pole MP jest unikalnym ID z API posłów. Jeśli poseł nie zostanie znaleziony, zapiszemy MP ID z API
+    mp_id_api = models.IntegerField(null=True, blank=True) # Unikalne ID posła z API, jeśli nie mamy go w bazie
+    first_name = models.CharField(max_length=100, null=True, blank=True) # Zachowujemy na wypadek braku posła
+    last_name = models.CharField(max_length=100, null=True, blank=True)
+    club = models.CharField(max_length=100, null=True, blank=True)
+    vote_choice = models.CharField(
+        max_length=20,
+        choices=[
+            ('YES', 'Za'),
+            ('NO', 'Przeciw'),
+            ('ABSTAIN', 'Wstrzymał się'),
+            ('NOT_PARTICIPATING', 'Nie brał udziału'), # Opcjonalne, jeśli to ma sens
+        ]
+    )
+
+    class Meta:
+        # Jeden poseł może głosować raz w danym głosowaniu
+        unique_together = ('voting', 'member')
+        db_table = 'parliament"."individual_votes' # Nazwa tabeli dla głosów indywidualnych
+        app_label = 'sejm_app'
+
+    def __str__(self):
+        return f"{self.member or self.first_name + ' ' + self.last_name} głosował {self.vote_choice} w {self.voting}"
